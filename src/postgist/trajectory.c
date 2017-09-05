@@ -13,6 +13,7 @@
   You should have received a copy of the GNU Lesser General Public License
   along with pg_postgist. See LICENSE. If not, write to
   Gilberto Ribeiro de Queiroz at <gribeiro@dpi.inpe.br>.
+
  */
 
 /* PostGIS-T*/
@@ -22,68 +23,71 @@
 #include <libpq/pqformat.h>
 #include <fmgr.h>
 #include <utils/builtins.h>
+#include <utils/timestamp.h>
+#include <measures.h> /*para a funcao de teste*/
+
+PG_FUNCTION_INFO_V1(TEG_in);
+
+Datum
+TEG_in(PG_FUNCTION_ARGS)
+{
+
+}
+
+PG_FUNCTION_INFO_V1(TEG_out);
+
+Datum
+TEG_out(PG_FUNCTION_ARGS)
+{
+  struct TESERIALIZED *teg = (struct TESERIALIZED*)PG_DETOAST_DATUM(PG_GETARG_DATUM(0));
+  struct TREGEOM *tegeom;
+  char *result;
+  size_t tehexwkb_size;
+
+  tegeom = serialization_to_traj_elem(teg);
+  result = tregeom_to_hexwkb(tegeom, WKB_EXTENDED, &tehexwkb_size);
+
+  free(tegeom);
+  PG_RETURN_CSTRING(result);
+}
+
+PG_FUNCTION_INFO_V1(construct);
+
+Datum
+construct_traject(PG_FUNCTION_ARGS)
+{
+  GSERIALIZED *geom = PG_GETARG_GSERIALIZED_P(0);
+
+  LWGEOM *lwgeom = lwgeom_from_gserialized(geom);
+
+  Timestamp timestamp = PG_GETARG_TIMESTAMP(1);
+
+  PG_RETURN_POINTER(TEG_construct(lwgeom, timestamp));
+
+}
+
+struct TESERIALIZED *TEG_construct(LWGEOM *lwgeom, Timestamp timestamp)
+{
+  struct TREGEOM *tg = (struct TREGEOM *)palloc(sizeof(struct TREGEOM));
+  struct TESERIALIZED *result = NULL;
+  size_t ret_size = 0;
+
+  if (lwgeom_is_empty(lwgeom)) {
+    return NULL;
+  }
+  // verificar Timestamp
+
+  tg->time_obj = timestamp;
+  tg->geom_elem = lwgeom;
+
+  FLAGS_SET_TIME(tg->flags, 1);
+  FLAGS_SET_GEOM(tg->flags, 1);
+
+  tg->type = lwgeom->type;
 
 
- PG_FUNCTION_INFO_V1(create_trajectory_elem);
+  result = tregeom_serialize(tg, &ret_size);
+  SET_VARSIZE(result, ret_size);
 
- Datum
- create_trajectory_elem(PG_FUNCTION_ARGS)
- {
-   Timestamp *time_geom = PG_GETARG_TIMESTAMP(0);
-   GSERIALIZED *geom = (GSERIALIZED*)PG_DETOAST_DATUM(PG_GETARG_DATUM(1));
-
-   struct trajectory_elem *trje = (struct trajectory_elem *) palloc(sizeof(struct trajectory_elem));
-
-   trje->time_obj = time_geom;
-
-   /*get lwgeom from GSERIALIZED varlena*/
-   trje->geom_elem = lwgeom_from_gserialized(geom);
-
-   if ( lwgeom_is_empty(trje->geom_elem))
-   {
-     PG_FREE_IF_COPY(geom, 0);
-     PG_RETURN_NULL();
-   }
-
-
-    /*test for create_trajectory_elem function */
-    /*should return hex string*/
-    char *hexwkb;
-    size_t hexwkb_size;
-
-    //  @param variant. Unsigned bitmask value. Accepts one of: WKB_ISO, WKB_EXTENDED, WKB_SFSQL.
-    hexwkb = lwgeom_to_hexwkb(trje->geom_elem, WKB_EXTENDED, &hexwkb_size);
-
-    elog(NOTICE, "sizeof %d ", strlen(hexwkb));
-
-    PG_FREE_IF_COPY(geom, 0);
-
-    elog(NOTICE, "trajectory_elem Finished");
-
-    PG_RETURN_CSTRING(hexwkb);
-
-  //  PG_RETURN_TRAJECTELEM_TYPE_P(trje);
- }
-
- PG_FUNCTION_INFO_V1(trajectory_elem_in);
-
- Datum
- trajectory_elem_in(PG_FUNCTION_ARGS)
- {
-
- }
-
- PG_FUNCTION_INFO_V1(trajectory_elem_out);
-
- Datum
- trajectory_elem_out(PG_FUNCTION_ARGS)
- {
-  //  struct trajectory_elem *trje = (struct trajectory_elem *) palloc(sizeof(struct trajectory_elem));
-   //
-  //  int size = sizeof(Timestamp) + sizeof(LWGEOM); /*get size from lwgeom_to_wkb_size*/
-   //
-  //  char *hstr = palloc(2 * size + 1);
-   //
-  //  char *cp = NULL;
-
- }
+  return result;
+}
